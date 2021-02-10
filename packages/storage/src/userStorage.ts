@@ -84,10 +84,15 @@ export class UserStorage {
 
   private listener?:Listener;
 
+  private mailbox: Mailbox;
+
   private logger: Pino.Logger;
 
   constructor(private readonly user: SpaceUser, private readonly config: UserStorageConfig = {}) {
     this.config.textileHubAddress = config.textileHubAddress ?? DefaultTextileHubAddress;
+    this.mailbox = new Mailbox(this.user, {
+      textileHubAddress: this.config.textileHubAddress,
+    });
     this.logger = Pino({
       enabled: config.debugMode || false,
       // prettyPrint: true,

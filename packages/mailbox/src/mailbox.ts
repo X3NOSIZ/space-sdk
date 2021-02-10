@@ -1,6 +1,5 @@
 import { Users, Update, ThreadID, InboxListOptions, UserAuth, UserMessage, PrivateKey, Public, privateKeyFromString, PublicKey } from '@textile/hub';
 import { Identity, SpaceUser, GetAddressFromPublicKey } from '@spacehq/users';
-import { DirEntryNotFoundError, FileNotFoundError, UnauthenticatedError } from '@spacehq/storage';
 import { grpc } from '@improbable-eng/grpc-web';
 import ee from 'event-emitter';
 import { threadId } from 'worker_threads';
@@ -35,7 +34,9 @@ export class Mailbox {
 
   private getUserAuth(): UserAuth {
     if (this.user.storageAuth === undefined) {
-      throw new UnauthenticatedError();
+      // TODO: move this error to common package so it can be
+      // imported without dep cycles
+      throw new Error('Authentication Error');
     }
     return this.user.storageAuth;
   }

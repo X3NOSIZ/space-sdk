@@ -36,7 +36,6 @@
   },
   "dependencies": {
     "@improbable-eng/grpc-web": "^0.14.0",
-    "@spacehq/storage": "^0.0.13",
     "@spacehq/users": "^0.0.13",
     "@textile/crypto": "^2.0.0",
     "@types/lodash": "^4.14.165",
