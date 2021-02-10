@@ -1,7 +1,9 @@
+/* eslint-disable no-await-in-loop */
 import { Identity, SpaceUser, GetAddressFromPublicKey } from '@spacehq/users';
 import { publicKeyBytesFromString } from '@textile/crypto';
 import { Users, Client, Buckets, PathItem, UserAuth, PathAccessRole, Root, ThreadID } from '@textile/hub';
 import ee from 'event-emitter';
+import Pino from 'pino';
 import dayjs from 'dayjs';
 import { flattenDeep } from 'lodash';
 import { v4 } from 'uuid';
@@ -10,7 +12,8 @@ import { DirEntryNotFoundError, FileNotFoundError, UnauthenticatedError } from '
 import { Listener } from './listener/listener';
 import { GundbMetadataStore } from './metadata/gundbMetadataStore';
 import { BucketMetadata, FileMetadata, UserMetadataStore } from './metadata/metadataStore';
-import { AddItemsRequest,
+import {
+  AddItemsRequest,
   AddItemsResponse,
   AddItemsResultSummary,
   AddItemsStatus,
@@ -19,15 +22,20 @@ import { AddItemsRequest,
   FileMember,
   ListDirectoryRequest,
   ListDirectoryResponse,
+  MakeFilePublicRequest,
+  OpenUuidFileRequest,
   OpenFileRequest,
   OpenFileResponse,
   OpenUuidFileResponse,
-  TxlSubscribeResponse } from './types';
-import { filePathFromIpfsPath,
+  TxlSubscribeResponse,
+} from './types';
+import {
+  filePathFromIpfsPath,
   getParentPath,
   isTopLevelPath,
   reOrderPathByParents,
-  sanitizePath } from './utils/pathUtils';
+  sanitizePath,
+} from './utils/pathUtils';
 import { consumeStream } from './utils/streamUtils';
 import { isMetaFileName } from './utils/fsUtils';
 import { getDeterministicThreadID } from './utils/threadsUtils';
@@ -45,10 +53,15 @@ export interface UserStorageConfig {
   threadsInit?: (auth: UserAuth) => Client;
   usersInit?: (auth: UserAuth) => Users;
   metadataStoreInit?: (identity: Identity) => Promise<UserMetadataStore>;
+  /**
+   * If set to true, would enable logging and some other debugging features.
+   * Should only be set to true in development
+   *
+   */
+  debugMode?: boolean;
 }
 
-// TODO: Change this to prod value
-const DefaultTextileHubAddress = 'https://hub-dev-web.space.storage:3007';
+const DefaultTextileHubAddress = 'https://webapi.hub.textile.io';
 
 interface BucketMetadataWithThreads extends BucketMetadata {
   root?: Root
@@ -76,8 +89,14 @@ export class UserStorage {
 
   private listener?:Listener;
 
+  private logger: Pino.Logger;
+
   constructor(private readonly user: SpaceUser, private readonly config: UserStorageConfig = {}) {
-    this.config.textileHubAddress = this.config.textileHubAddress ?? DefaultTextileHubAddress;
+    this.config.textileHubAddress = config.textileHubAddress ?? DefaultTextileHubAddress;
+    this.logger = Pino({
+      enabled: config.debugMode || false,
+      // prettyPrint: true,
+    }).child({ pk: user.identity.public.toString() });
   }
 
   /**
@@ -112,7 +131,12 @@ export class UserStorage {
     await client.pushPath(bucket.root?.key || '', '.keep', file);
   }
 
-  private static parsePathItems(its: PathItem[], metadataMap: Record<string, FileMetadata>, bucket: string, dbId: string): DirectoryEntry[] {
+  private static parsePathItems(
+    its: PathItem[],
+    metadataMap: Record<string, FileMetadata>,
+    bucket: string,
+    dbId: string,
+  ): DirectoryEntry[] {
     const filteredEntries = its.filter((it:PathItem) => !isMetaFileName(it.name));
 
     const des:DirectoryEntry[] = filteredEntries.map((it: PathItem) => {
@@ -234,7 +258,6 @@ export class UserStorage {
       }
 
       const uuidMap = await this.getFileMetadataMap(bucket.slug, bucket.dbId, result.item?.items || []);
-
       return {
         items: UserStorage.parsePathItems(result.item?.items || [], uuidMap, bucket.slug, bucket.dbId) || [],
       };
@@ -272,7 +295,7 @@ export class UserStorage {
     const fileMetadata = await metadataStore.findFileMetadata(bucket.slug, bucket.dbId, path);
 
     try {
-      const fileData = client.pullPath(bucket.root?.key || '', path);
+      const fileData = client.pullPath(bucket.root?.key || '', path, { progress: request.progress });
       return {
         stream: fileData,
         consumeStream: () => consumeStream(fileData),
@@ -297,7 +320,9 @@ export class UserStorage {
    * ```typescript
    * const spaceStorage = new UserStorage(spaceUser);
    *
-   * const response = await spaceStorage.openFileByUuid('file-uu-id');
+   * const response = await spaceStorage.openFileByUuid({
+   *    uuid: 'file-uu-id',
+   * });
    * const filename = response.entry.name;
    *
    * // response.stream is an async iterable
@@ -309,27 +334,33 @@ export class UserStorage {
    * const fileBytes = await response.consumeStream();
    *```
    *
-   * @param uuid - Uuid of file to be open
    */
-  public async openFileByUuid(uuid: string): Promise<OpenUuidFileResponse> {
+  public async openFileByUuid(request: OpenUuidFileRequest): Promise<OpenUuidFileResponse> {
     const metadataStore = await this.getMetadataStore();
     const client = this.getUserBucketsClient();
-    const fileMetadata = await metadataStore.findFileMetadataByUuid(uuid);
+    const fileMetadata = await metadataStore.findFileMetadataByUuid(request.uuid);
     if (!fileMetadata) {
       throw new FileNotFoundError();
     }
 
-    const existingRoot = await UserStorage.getExistingBucket(client, fileMetadata.bucketSlug, fileMetadata.dbId);
-    if (!existingRoot) {
-      throw new DirEntryNotFoundError(fileMetadata.path, fileMetadata.bucketSlug);
-    }
-
     try {
+      client.withThread(fileMetadata.dbId);
+      const bucketKey = fileMetadata.bucketKey || '';
       // fetch entry information
-      const existingFile = await client.listPath(existingRoot.key, fileMetadata.path);
-      const [fileEntry] = UserStorage.parsePathItems([existingFile.item!], { [fileMetadata.path]: fileMetadata }, fileMetadata.bucketSlug, fileMetadata.dbId);
+      const existingFile = await client.listPath(bucketKey, fileMetadata.path);
+      if (!existingFile.item) {
+        throw new FileNotFoundError();
+      }
 
-      const fileData = client.pullPath(existingRoot.key, fileMetadata.path);
+      const [fileEntry] = UserStorage.parsePathItems(
+        [existingFile.item!],
+        { [fileMetadata.path]: fileMetadata },
+        fileMetadata.bucketSlug,
+        fileMetadata.dbId,
+      );
+
+      const fileData = client.pullPath(bucketKey, fileMetadata.path, { progress: request.progress });
+
       return {
         stream: fileData,
         consumeStream: () => consumeStream(fileData),
@@ -343,6 +374,42 @@ export class UserStorage {
         throw e;
       }
     }
+  }
+
+  /**
+   * Allow or revoke public access to a file.
+   *
+   * @example
+   * ```typescript
+   * const spaceStorage = new UserStorage(spaceUser);
+   *
+   * await spaceStorage.setFilePublicAccess({
+   *    bucket: 'personal',
+   *    path: '/file.txt',
+   *    allowAccess: true, // <- set to false to revoke public access
+   * });
+   * ```
+   */
+  public async setFilePublicAccess(request: MakeFilePublicRequest): Promise<void> {
+    const metadataStore = await this.getMetadataStore();
+    const client = this.getUserBucketsClient();
+    const bucket = await this.getOrCreateBucket(client, request.bucket);
+    const path = sanitizePath(request.path);
+
+    const metadata = await metadataStore.findFileMetadata(bucket.slug, bucket.dbId, path);
+    if (metadata === undefined) {
+      throw new DirEntryNotFoundError(path, bucket.slug);
+    }
+
+    const roles = new Map();
+    if (request.allowAccess) {
+      await metadataStore.setFilePublic(metadata!);
+      roles.set('*', PathAccessRole.PATH_ACCESS_ROLE_WRITER);
+    } else {
+      roles.set('*', PathAccessRole.PATH_ACCESS_ROLE_UNSPECIFIED);
+    }
+
+    await client.pushPathAccessRoles(bucket.root?.key || '', path, roles);
   }
 
   /**
@@ -415,6 +482,7 @@ export class UserStorage {
     emitter: ee.Emitter,
   ): Promise<AddItemsResultSummary> {
     const metadataStore = await this.getMetadataStore();
+    const rootKey = bucket.root?.key || '';
     const summary: AddItemsResultSummary = {
       bucket: request.bucket,
       files: [],
@@ -432,12 +500,23 @@ export class UserStorage {
           path: parentPath,
           status: 'success',
         };
+        this.logger.info({ path: parentPath }, 'Uploading parent directory');
 
         try {
           await this.createFolder({
             bucket: request.bucket,
             path: parentPath,
           });
+
+          // set folder entry
+          const newFolder = await client.listPath(rootKey, parentPath);
+          const [folderEntry] = UserStorage.parsePathItems(
+            [newFolder.item!],
+            {},
+            bucket.slug,
+            bucket.dbId,
+          );
+          status.entry = folderEntry;
 
           emitter.emit('data', status);
           summary.files.push(status);
@@ -462,18 +541,30 @@ export class UserStorage {
           path,
           status: 'success',
         };
+        this.logger.info({ path }, 'Uploading file');
 
         try {
-          // eslint-disable-next-line no-await-in-loop
-          await client.pushPath(bucket.root?.key || '', path, file.data);
-          // eslint-disable-next-line no-await-in-loop
-          await metadataStore.upsertFileMetadata({
+          const metadata = await metadataStore.upsertFileMetadata({
             uuid: v4(),
             mimeType: file.mimeType,
+            bucketKey: bucket.root?.key,
             bucketSlug: bucket.slug,
             dbId: bucket.dbId,
             path,
           });
+          await client.pushPath(rootKey, path, file.data, { progress: file.progress });
+          // set file entry
+          const existingFile = await client.listPath(rootKey, path);
+          const [fileEntry] = UserStorage.parsePathItems(
+            [existingFile.item!],
+            {
+              [path]: metadata,
+            },
+            bucket.slug,
+            bucket.dbId,
+          );
+          status.entry = fileEntry;
+
           emitter.emit('data', status);
         } catch (err) {
           status.status = 'error';
@@ -505,12 +596,14 @@ export class UserStorage {
     ]);
     const paths = flattenDeep(items.map(extractPathRecursive));
 
+    this.logger.info('Building FileMetadata Map');
     await Promise.all(paths.map(async (path: string) => {
       const metadata = await metadataStore.findFileMetadata(bucketSlug, dbId, path);
       if (metadata) {
         result[path] = metadata;
       }
     }));
+    this.logger.info({ paths, map: result }, 'FileMetadata Map complete');
 
     return result;
   }
@@ -603,6 +696,6 @@ export class UserStorage {
   private getDefaultUserMetadataStore(): Promise<UserMetadataStore> {
     const username = Buffer.from(this.user.identity.public.pubKey).toString('hex');
     const password = getDeterministicThreadID(this.user.identity).toString();
-    return GundbMetadataStore.fromIdentity(username, password);
+    return GundbMetadataStore.fromIdentity(username, password, undefined, this.logger);
   }
 }

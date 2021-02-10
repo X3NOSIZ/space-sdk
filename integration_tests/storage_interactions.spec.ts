@@ -82,10 +82,18 @@ describe('Users storing data', () => {
         {
           path: '/subfolder/inner.txt',
           status: 'success',
+          entry: {
+            name: 'inner.txt',
+            isDir: false,
+          },
         },
         {
           path: '/subfolder',
           status: 'success',
+          entry: {
+            name: 'subfolder',
+            isDir: true,
+          },
         },
       ],
     });
@@ -100,6 +108,14 @@ describe('Users storing data', () => {
           mimeType: 'plain/text',
         },
       ],
+    });
+
+    let summary2: AddItemsResultSummary | undefined;
+    await new Promise((resolve) => {
+      anotheruploadResponse.once('done', (data: AddItemsEventData) => {
+        summary2 = data as AddItemsResultSummary;
+        resolve();
+      });
     });
 
     // validate files are in the directory
@@ -202,19 +218,29 @@ describe('Users storing data', () => {
     expect(file?.bucket).to.not.be.empty;
     expect(file?.dbId).to.not.be.empty;
 
-    const fileResponse = await storage.openFileByUuid(file?.uuid || '');
+    const fileResponse = await storage.openFileByUuid({ uuid: file?.uuid || '' });
     expect(fileResponse?.entry?.bucket).to.not.be.empty;
     expect(fileResponse?.entry?.dbId).to.not.be.empty;
     expect(fileResponse.entry.name).to.equal('top.txt');
-    const actualTxtContent = await fileResponse.consumeStream();
+    let actualTxtContent = await fileResponse.consumeStream();
     expect(new TextDecoder('utf8').decode(actualTxtContent)).to.equal(txtContent);
 
     // ensure file is not accessible from outside of owners file
     const { user: unauthorizedUser } = await authenticateAnonymousUser();
     const unauthorizedStorage = new UserStorage(unauthorizedUser);
 
-    await expect(unauthorizedStorage.openFileByUuid(file?.uuid || ''))
+    await expect(unauthorizedStorage.openFileByUuid({ uuid: file?.uuid || '' }))
       .to.eventually.be.rejectedWith(FileNotFoundError);
+
+    // ensure file is accessible after making it public
+    await storage.setFilePublicAccess({ bucket: 'personal', path: '/top.txt', allowAccess: true });
+
+    const publicFileResponse = await unauthorizedStorage.openFileByUuid({
+      uuid: file?.uuid || '',
+    });
+    expect(publicFileResponse.entry.name).to.equal('top.txt');
+    actualTxtContent = await publicFileResponse.consumeStream();
+    expect(new TextDecoder('utf8').decode(actualTxtContent)).to.equal(txtContent);
   }).timeout(TestsDefaultTimeout);
 
   it('should subscribe to textile events', async () => {

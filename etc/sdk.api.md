@@ -7,14 +7,16 @@
 import { Buckets } from '@textile/hub';
 import { Client } from '@textile/hub';
 import { IGunChainReference } from 'gun/types/chain';
+import Pino from 'pino';
 import { UserAuth } from '@textile/hub';
 
 // @public (undocumented)
 export interface AddItemFile {
     // (undocumented)
-    data: ReadableStream<Uint8Array> | ArrayBuffer | string;
+    data: ReadableStream<Uint8Array> | ArrayBuffer | string | Blob;
     mimeType: string;
     path: string;
+    progress?: (bytesRead?: number) => void;
 }
 
 // @public (undocumented)
@@ -53,6 +55,7 @@ export interface AddItemsResultSummary {
 
 // @public (undocumented)
 export interface AddItemsStatus {
+    entry?: DirectoryEntry;
     // (undocumented)
     error?: Error;
     // (undocumented)
@@ -90,7 +93,11 @@ export interface DirectoryEntry {
     // (undocumented)
     backupCount: number;
     // (undocumented)
+    bucket: string;
+    // (undocumented)
     created: string;
+    // (undocumented)
+    dbId: string;
     // (undocumented)
     fileExtension: string;
     // (undocumented)
@@ -135,6 +142,8 @@ export interface FileMember {
 // @public
 export interface FileMetadata {
     // (undocumented)
+    bucketKey?: string;
+    // (undocumented)
     bucketSlug: string;
     // (undocumented)
     dbId: string;
@@ -171,10 +180,10 @@ export class GundbMetadataStore implements UserMetadataStore {
     findBucket(bucketSlug: string): Promise<BucketMetadata | undefined>;
     findFileMetadata(bucketSlug: string, dbId: string, path: string): Promise<FileMetadata | undefined>;
     findFileMetadataByUuid(uuid: string): Promise<FileMetadata | undefined>;
-    // Warning: (ae-forgotten-export) The symbol "GunChainReference" needs to be exported by the entry point index.d.ts
-    // Warning: (ae-forgotten-export) The symbol "GunDataState" needs to be exported by the entry point index.d.ts
-    static fromIdentity(username: string, userpass: string, gunOrServer?: GunChainReference<GunDataState> | string): Promise<GundbMetadataStore>;
+    // Warning: (ae-forgotten-export) The symbol "GunInit" needs to be exported by the entry point index.d.ts
+    static fromIdentity(username: string, userpass: string, gunOrServer?: GunInit | string | string[], logger?: Pino.Logger | boolean): Promise<GundbMetadataStore>;
     listBuckets(): Promise<BucketMetadata[]>;
+    setFilePublic(metadata: FileMetadata): Promise<void>;
     upsertFileMetadata(metadata: FileMetadata): Promise<FileMetadata>;
     }
 
@@ -219,11 +228,21 @@ export interface ListDirectoryResponse {
 }
 
 // @public (undocumented)
+export interface MakeFilePublicRequest {
+    allowAccess: boolean;
+    // (undocumented)
+    bucket: string;
+    // (undocumented)
+    path: string;
+}
+
+// @public (undocumented)
 export interface OpenFileRequest {
     // (undocumented)
     bucket: string;
     // (undocumented)
     path: string;
+    progress?: (bytesRead?: number) => void;
 }
 
 // @public (undocumented)
@@ -233,6 +252,13 @@ export interface OpenFileResponse {
     mimeType: string | undefined;
     // (undocumented)
     stream: AsyncIterableIterator<Uint8Array>;
+}
+
+// @public (undocumented)
+export interface OpenUuidFileRequest {
+    progress?: (bytesRead?: number) => void;
+    // (undocumented)
+    uuid: string;
 }
 
 // @public (undocumented)
@@ -321,6 +347,7 @@ export interface UserMetadataStore {
     findFileMetadata: (bucketSlug: string, dbId: string, path: string) => Promise<FileMetadata | undefined>;
     findFileMetadataByUuid: (uuid: string) => Promise<FileMetadata | undefined>;
     listBuckets: () => Promise<BucketMetadata[]>;
+    setFilePublic: (metadata: FileMetadata) => Promise<void>;
     upsertFileMetadata: (data: FileMetadata) => Promise<FileMetadata>;
 }
 
@@ -355,13 +382,15 @@ export class UserStorage {
     initListener(): Promise<void>;
     listDirectory(request: ListDirectoryRequest): Promise<ListDirectoryResponse>;
     openFile(request: OpenFileRequest): Promise<OpenFileResponse>;
-    openFileByUuid(uuid: string): Promise<OpenUuidFileResponse>;
+    openFileByUuid(request: OpenUuidFileRequest): Promise<OpenUuidFileResponse>;
+    setFilePublicAccess(request: MakeFilePublicRequest): Promise<void>;
     txlSubscribe(): Promise<TxlSubscribeResponse>;
     }
 
 // @public (undocumented)
 export interface UserStorageConfig {
     bucketsInit?: (auth: UserAuth) => Buckets;
+    debugMode?: boolean;
     // (undocumented)
     metadataStoreInit?: (identity: Identity) => Promise<UserMetadataStore>;
     // (undocumented)

@@ -65,6 +65,32 @@ export interface ListDirectoryResponse {
 export interface OpenFileRequest {
   path: string;
   bucket: string;
+  /**
+   * progress callback if provided will be called with bytes read from
+   * remote while opening the file.
+   *
+   */
+  progress?: (bytesRead?: number) => void;
+}
+
+export interface OpenUuidFileRequest {
+  uuid: string;
+  /**
+   * progress callback if provided will be called with bytes read from
+   * remote while opening the file.
+   *
+   */
+  progress?: (bytesRead?: number) => void;
+}
+
+export interface MakeFilePublicRequest {
+  path: string;
+  bucket: string;
+  /**
+   * Specifies if public access to file should be accessible.
+   *
+   */
+  allowAccess: boolean;
 }
 
 export interface OpenFileResponse {
@@ -110,7 +136,13 @@ export interface AddItemFile {
    *
    */
   mimeType: string;
-  data: ReadableStream<Uint8Array> | ArrayBuffer | string;
+  data: ReadableStream<Uint8Array> | ArrayBuffer | string | Blob;
+  /**
+   * progress callback if provided will be called with bytes written to
+   * remote while uploading the file.
+   *
+   */
+  progress?: (bytesRead?: number) => void;
 }
 
 export interface AddItemsRequest {
@@ -121,6 +153,13 @@ export interface AddItemsRequest {
 export interface AddItemsStatus {
   path: string;
   status: 'success' | 'error';
+  /**
+   * Directory entry of uploaded file.
+   *
+   * Only present if status is 'success'.
+   *
+   */
+  entry?: DirectoryEntry;
   error?: Error;
 }
 
