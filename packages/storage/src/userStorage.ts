@@ -1,7 +1,7 @@
 /* eslint-disable no-await-in-loop */
 import { Identity, SpaceUser, GetAddressFromPublicKey } from '@spacehq/users';
 import { publicKeyBytesFromString } from '@textile/crypto';
-import { Users, Client, Buckets, PathItem, UserAuth, PathAccessRole, Root, ThreadID } from '@textile/hub';
+import { Client, Buckets, PathItem, UserAuth, PathAccessRole, Root, ThreadID } from '@textile/hub';
 import ee from 'event-emitter';
 import Pino from 'pino';
 import dayjs from 'dayjs';
@@ -12,8 +12,7 @@ import { DirEntryNotFoundError, FileNotFoundError, UnauthenticatedError } from '
 import { Listener } from './listener/listener';
 import { GundbMetadataStore } from './metadata/gundbMetadataStore';
 import { BucketMetadata, FileMetadata, UserMetadataStore } from './metadata/metadataStore';
-import {
-  AddItemsRequest,
+import { AddItemsRequest,
   AddItemsResponse,
   AddItemsResultSummary,
   AddItemsStatus,
@@ -27,15 +26,12 @@ import {
   OpenFileRequest,
   OpenFileResponse,
   OpenUuidFileResponse,
-  TxlSubscribeResponse,
-} from './types';
-import {
-  filePathFromIpfsPath,
+  TxlSubscribeResponse } from './types';
+import { filePathFromIpfsPath,
   getParentPath,
   isTopLevelPath,
   reOrderPathByParents,
-  sanitizePath,
-} from './utils/pathUtils';
+  sanitizePath } from './utils/pathUtils';
 import { consumeStream } from './utils/streamUtils';
 import { isMetaFileName } from './utils/fsUtils';
 import { getDeterministicThreadID } from './utils/threadsUtils';
@@ -51,7 +47,6 @@ export interface UserStorageConfig {
    */
   bucketsInit?: (auth: UserAuth) => Buckets;
   threadsInit?: (auth: UserAuth) => Client;
-  usersInit?: (auth: UserAuth) => Users;
   metadataStoreInit?: (identity: Identity) => Promise<UserMetadataStore>;
   /**
    * If set to true, would enable logging and some other debugging features.
@@ -643,10 +638,6 @@ export class UserStorage {
     return this.initThreads(this.getUserAuth());
   }
 
-  private getUsersClient(): Users {
-    return this.initUsers(this.getUserAuth());
-  }
-
   private getUserAuth(): UserAuth {
     if (this.user.storageAuth === undefined) {
       throw new UnauthenticatedError();
@@ -669,14 +660,6 @@ export class UserStorage {
     }
 
     return Client.withUserAuth(userAuth, this.config?.textileHubAddress);
-  }
-
-  private initUsers(userAuth: UserAuth): Users {
-    if (this.config?.usersInit) {
-      return this.config.usersInit(userAuth);
-    }
-
-    return Users.withUserAuth(userAuth, { host: this.config?.textileHubAddress });
   }
 
   private async getMetadataStore(): Promise<UserMetadataStore> {
