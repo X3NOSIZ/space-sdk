@@ -1,13 +1,20 @@
-import { Users, Update, ThreadID, InboxListOptions, UserMessage, PrivateKey, Public, privateKeyFromString, PublicKey } from '@textile/hub';
+import { Users, Update, ThreadID, InboxListOptions, UserAuth, UserMessage, PrivateKey, Public, privateKeyFromString, PublicKey } from '@textile/hub';
+import { Identity, SpaceUser, GetAddressFromPublicKey } from '@spacehq/users';
+import { DirEntryNotFoundError, FileNotFoundError, UnauthenticatedError } from '@spacehq/storage';
 import { grpc } from '@improbable-eng/grpc-web';
 import ee from 'event-emitter';
 import { threadId } from 'worker_threads';
 
-export class Mailbox {
-  private client: Users;
+export interface MailboxConfig {
+  textileHubAddress?: string;
+  usersInit?: (auth: UserAuth) => Users;
+}
 
-  public constructor(client: Users) {
-    this.client = client;
+const DefaultTextileHubAddress = 'https://hub-dev-web.space.storage:3007';
+
+export class Mailbox {
+  constructor(private readonly user: SpaceUser, private readonly config: MailboxConfig = {}) {
+    this.config.textileHubAddress = this.config.textileHubAddress ?? DefaultTextileHubAddress;
   }
 
   //   public async ListInboxMessages(opts: InboxListOptions):[]UserMessage {
@@ -23,7 +30,26 @@ export class Mailbox {
   public async SendMessage(from: string, to: string, body:Uint8Array): Promise<UserMessage> {
     const fromkey = PrivateKey.fromString(from);
     const tokey = PublicKey.fromString(to);
-    return this.client.sendMessage(fromkey, tokey, body);
+    return this.getUsersClient().sendMessage(fromkey, tokey, body);
+  }
+
+  private getUserAuth(): UserAuth {
+    if (this.user.storageAuth === undefined) {
+      throw new UnauthenticatedError();
+    }
+    return this.user.storageAuth;
+  }
+
+  private getUsersClient(): Users {
+    return this.initUsers(this.getUserAuth());
+  }
+
+  private initUsers(userAuth: UserAuth): Users {
+    if (this.config?.usersInit) {
+      return this.config.usersInit(userAuth);
+    }
+
+    return Users.withUserAuth(userAuth, { host: this.config?.textileHubAddress });
   }
 
   // public WatchInbox():ee {

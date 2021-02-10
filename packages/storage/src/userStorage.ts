@@ -5,6 +5,7 @@ import ee from 'event-emitter';
 import dayjs from 'dayjs';
 import { flattenDeep } from 'lodash';
 import { v4 } from 'uuid';
+import { Mailbox } from '@spacehq/mailbox';
 import { DirEntryNotFoundError, FileNotFoundError, UnauthenticatedError } from './errors';
 import { Listener } from './listener/listener';
 import { GundbMetadataStore } from './metadata/gundbMetadataStore';
@@ -30,7 +31,6 @@ import { filePathFromIpfsPath,
 import { consumeStream } from './utils/streamUtils';
 import { isMetaFileName } from './utils/fsUtils';
 import { getDeterministicThreadID } from './utils/threadsUtils';
-import { Mailbox } from './mailbox/mailbox';
 
 export interface UserStorageConfig {
   textileHubAddress?: string;
@@ -75,8 +75,6 @@ export class UserStorage {
   private userMetadataStore?: UserMetadataStore;
 
   private listener?:Listener;
-
-  private mailbox: Mailbox;
 
   constructor(private readonly user: SpaceUser, private readonly config: UserStorageConfig = {}) {
     this.config.textileHubAddress = this.config.textileHubAddress ?? DefaultTextileHubAddress;
