@@ -1,4 +1,5 @@
 import { StringNullableChain } from 'lodash';
+import { PathAccessRole } from '@textile/hub';
 
 export interface CreateFolderRequest {
   /**
@@ -33,6 +34,7 @@ export interface ListDirectoryRequest {
 export interface FileMember {
   publicKey:string;
   address?:string;
+  role: PathAccessRole;
 }
 
 /**

@@ -1,6 +1,6 @@
 {
   "name": "@spacehq/mailbox",
-  "version": "0.0.13",
+  "version": "0.0.16",
   "description": "Space Mailbox implementation",
   "main": "dist/index",
   "types": "dist/index",
