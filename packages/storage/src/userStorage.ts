@@ -12,6 +12,7 @@ import { DirEntryNotFoundError, FileNotFoundError, UnauthenticatedError } from '
 import { Listener } from './listener/listener';
 import { GundbMetadataStore } from './metadata/gundbMetadataStore';
 import { BucketMetadata, FileMetadata, UserMetadataStore } from './metadata/metadataStore';
+import { createFileInvitations } from './sharing/sharing';
 import { AddItemsRequest,
   AddItemsResponse,
   AddItemsResultSummary,
@@ -714,9 +715,22 @@ export class UserStorage {
         roles.set(userKey.pk, PathAccessRole.PATH_ACCESS_ROLE_WRITER);
         await client.pushPathAccessRoles(path.key, path.fullPath.path, roles);
       }
-
-      // TODO: Send a mailbox message to new user
     }
+
+    const idString = Buffer.from(this.user.identity.public.pubKey).toString('hex');
+    const filteredRecipients:string[] = request.publicKeys.map((key) => key.pk).filter((key) => key !== null && key !== undefined) as string[];
+    const store = await this.getMetadataStore();
+    const invitations = await createFileInvitations(
+      idString,
+      paths.map((path) => path.fullPath),
+      filteredRecipients,
+      store,
+    );
+
+    invitations.forEach(async (inv) => {
+      const body = new TextEncoder().encode(JSON.stringify(inv));
+      await this.mailbox.SendMessage(inv.inviteePublicKey, body);
+    });
 
     return {
       publicKeys: userKeys.map((keys) => ({
