@@ -1,4 +1,4 @@
-import { FullPath, Invitation, InvitationStatus } from '@spacehq/mailbox';
+import { FullPath, Invitation, InvitationStatus } from '../types';
 import { BucketMetadata, FileMetadata, UserMetadataStore } from '../metadata/metadataStore';
 
 /**

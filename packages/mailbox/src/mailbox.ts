@@ -11,6 +11,26 @@ export interface MailboxConfig {
 
 const DefaultTextileHubAddress = 'https://webapi.hub.textile.io';
 
+// TODO: move to common utils pkg? so we can avoid dep cycle
+const isPkHex = (input: string): boolean => {
+  const re = /[0-9A-Fa-f]{64}/g;
+  return re.test(input);
+};
+
+const tryParsePublicKey = (pk: string): PublicKey => {
+  const keyLength = 32;
+  if (isPkHex(pk)) {
+    return new PublicKey(Buffer.from(pk, 'hex').slice(0, keyLength));
+  }
+
+  const key = PublicKey.fromString(pk);
+  if (key.pubKey.byteLength !== keyLength) {
+    throw new Error(`invalid public key: ${pk}`);
+  }
+
+  return key;
+};
+
 export class Mailbox {
   constructor(private readonly user: SpaceUser, private readonly config: MailboxConfig = {}) {
     this.config.textileHubAddress = config.textileHubAddress ?? DefaultTextileHubAddress;
@@ -18,7 +38,7 @@ export class Mailbox {
 
   public static async CreateMailbox(user: SpaceUser, config: MailboxConfig = {}):Promise<Mailbox> {
     const mb = new Mailbox(user, config);
-    mb.getUsersClient().setupMailbox();
+    await mb.getUsersClient().setupMailbox();
     return mb;
   }
   //   public async ListInboxMessages(opts: InboxListOptions):[]UserMessage {
@@ -32,8 +52,8 @@ export class Mailbox {
   //   };
 
   public async SendMessage(to: string, body:Uint8Array): Promise<UserMessage> {
-    const tokey = PublicKey.fromString(to);
-    return this.getUsersClient().sendMessage(this.user.identity, tokey, body);
+    const toKey = tryParsePublicKey(to);
+    return this.getUsersClient().sendMessage(this.user.identity, toKey, body);
   }
 
   private getUserAuth(): UserAuth {

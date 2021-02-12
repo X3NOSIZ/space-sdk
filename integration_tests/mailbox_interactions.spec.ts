@@ -1,4 +1,4 @@
-import { BrowserStorage, Users, UserStorage, VaultBackupType, Mailbox } from '@spacehq/sdk';
+import { BrowserStorage, Users, UserStorage, VaultBackupType, Mailbox, tryParsePublicKey } from '@spacehq/sdk';
 import { Update, ThreadID, InboxListOptions, UserAuth, UserMessage, PrivateKey, Public, privateKeyFromString, PublicKey } from '@textile/hub';
 import { expect, use } from 'chai';
 import * as chaiSubset from 'chai-subset';
@@ -20,7 +20,13 @@ describe('Mailbox interactions', () => {
     const { user: user2, identity: receipient } = await authenticateAnonymousUser();
     const mb2 = await Mailbox.CreateMailbox(user2);
 
-    const sentmsg = mb1.SendMessage(Buffer.from(receipient.public.bytes).toString('hex'), new Uint8Array(8));
-    console.log('sentmsg: ', sentmsg);
+    const sentmsg = await mb1.SendMessage(Buffer.from(user2.identity.public.pubKey).toString('hex'), new Uint8Array(8));
+
+    expect(sentmsg).not.to.be.null;
+    expect(sentmsg.id).not.to.be.null;
+    expect(sentmsg.createdAt).not.to.be.null;
+    expect(sentmsg.body).not.to.be.null;
+    expect(sentmsg.to).to.eq(tryParsePublicKey(Buffer.from(user2.identity.public.pubKey).toString('hex')).toString());
+    expect(sentmsg.from).to.eq(tryParsePublicKey(Buffer.from(user1.identity.public.pubKey).toString('hex')).toString());
   }).timeout(TestsDefaultTimeout);
 });
