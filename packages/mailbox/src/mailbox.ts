@@ -9,13 +9,18 @@ export interface MailboxConfig {
   usersInit?: (auth: UserAuth) => Users;
 }
 
-const DefaultTextileHubAddress = 'https://hub-dev-web.space.storage:3007';
+const DefaultTextileHubAddress = 'https://webapi.hub.textile.io';
 
 export class Mailbox {
   constructor(private readonly user: SpaceUser, private readonly config: MailboxConfig = {}) {
-    this.config.textileHubAddress = this.config.textileHubAddress ?? DefaultTextileHubAddress;
+    this.config.textileHubAddress = config.textileHubAddress ?? DefaultTextileHubAddress;
   }
 
+  public static async CreateMailbox(user: SpaceUser, config: MailboxConfig = {}):Promise<Mailbox> {
+    const mb = new Mailbox(user, config);
+    mb.getUsersClient().setupMailbox();
+    return mb;
+  }
   //   public async ListInboxMessages(opts: InboxListOptions):[]UserMessage {
   //     const messages = await this.client.listInboxMessages();
   //     const inbox = [];
@@ -26,10 +31,9 @@ export class Mailbox {
 
   //   };
 
-  public async SendMessage(from: string, to: string, body:Uint8Array): Promise<UserMessage> {
-    const fromkey = PrivateKey.fromString(from);
+  public async SendMessage(to: string, body:Uint8Array): Promise<UserMessage> {
     const tokey = PublicKey.fromString(to);
-    return this.getUsersClient().sendMessage(fromkey, tokey, body);
+    return this.getUsersClient().sendMessage(this.user.identity, tokey, body);
   }
 
   private getUserAuth(): UserAuth {
